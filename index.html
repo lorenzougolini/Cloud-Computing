@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Image Modifier</title>
+  <link rel="icon" href="data:,">
+  <style>
+    body {
+      font-family: "Segoe UI", Arial, sans-serif;
+      margin: 2rem auto;
+      max-width: 800px;
+      line-height: 1.5;
+      background: #fafafa;
+      color: #333;
+    }
+
+    h2 {
+      margin-bottom: 0.5rem;
+      font-size: 1.6rem;
+      border-bottom: 2px solid #eee;
+      padding-bottom: 0.3rem;
+    }
+
+    .iamge-controls {
+      margin-top: 1.5rem;
+      padding: 1rem;
+      background: #fff;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+    .controls {
+      margin-top: 1.5rem;
+      padding: 1rem;
+      background: #fff;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+
+    .controls h3 {
+      margin-top: 0;
+      font-size: 1.2rem;
+      color: #444;
+    }
+
+    .preview-area {
+      margin: 1rem 0;
+      text-align: center;
+    }
+
+    #preview {
+      max-width: 100%;
+      max-height: 400px;
+      display: none;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      padding: 6px;
+      background: #fff;
+    }
+
+    button {
+      margin: 0.3rem 0.2rem;
+      padding: 0.5rem 0.9rem;
+      font-size: 0.95rem;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      background: #f8f8f8;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      text-align: center;
+    }
+
+    button:hover:enabled {
+      background: #eaeaea;
+    }
+
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .row {
+        margin-bottom: 0.8rem;
+    }
+
+    .action-row {
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+    }
+
+    .spinner {
+        width: 18px;
+        height: 18px;
+        border: 3px solid #ccc;
+        border-top: 3px solid #333;
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+        display: none;
+    }
+
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+
+    label {
+      display: inline-block;
+      margin-right: 0.8rem;
+    }
+
+    input[type="number"] {
+      width: 80px;
+      padding: 0.2rem 0.4rem;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 0.9rem;
+    }
+
+    input[type="file"] {
+      margin-top: 0.5rem;
+    }
+  </style>
+</head>
+<body>
+  <h2>Upload and Modify Image</h2>
+
+  <input type="file" id="imageInput" accept="image/*" onchange="previewImage(); resetImage(true)">
+  <div class="image-controls">
+    <h3>Preview</h3>
+    <div class="preview-area">
+      <img id="preview">
+    </div>
+    <div class="action-row">
+        <button id="revertButton" onclick="revertLastChange(); revertParameters()" disabled>
+          Revert Last Change
+        </button>
+        <div class="spinner" id="spinner"></div>
+    </div>
+  </div>
+
+  <div class="controls">
+    <div class="row">
+      <button id="bwButton" onclick="applyFilter('bw')" disabled>Convert to B/W</button>
+      <button id="blurButton" onclick="applyFilter('blur')" disabled>Blur</button>
+      <button id="sharpenButton" onclick="applyFilter('sharpen')" disabled>Sharpen</button>
+      <button id="rotateButton" onclick="applyFilter('rotate')" disabled>Rotate</button>
+    </div>
+    <div class="row">
+        <label>Width: <input type="number" id="width" placeholder="300"></label>
+        <label>Height: <input type="number" id="height" placeholder="300"></label>
+        <button id="resizeButton" onclick="applyFilter('resize')" disabled>Resize</button>
+    </div>
+  </div>
+
+  <script>
+    const API_UPLOAD_URL = "https://68hoxhrnkc.execute-api.us-east-1.amazonaws.com/prod/images/upload-image";
+    const API_MODIFY_URL = "https://68hoxhrnkc.execute-api.us-east-1.amazonaws.com/prod/images/process-image";
+    const API_REVERT_URL = "https://68hoxhrnkc.execute-api.us-east-1.amazonaws.com/prod/images/get-image";
+    const API_DELETE_URL = "https://68hoxhrnkc.execute-api.us-east-1.amazonaws.com/prod/images/delete-images";
+    modif_count = 0;
+    image_id = null;
+    
+    const input = document.getElementById("imageInput");
+    const preview = document.getElementById("preview");
+    
+    window.addEventListener('beforeunload', function(event) {
+        if (!image_id) return;
+        fetch(`${API_DELETE_URL}?key=${encodeURIComponent(image_id)}`, {
+            method: 'DELETE',
+            keepalive: true
+        });
+    });
+
+    function previewImage() {
+        if (input.files && input.files[0]) {
+            const file = input.files[0];
+            const url = URL.createObjectURL(file);
+            preview.src = url;
+            preview.style.display = "block";
+        }
+    }
+
+    function updateButton() {
+        const button = document.getElementById("revertButton");
+        button.disabled = modif_count <= 0;
+    }
+
+    function revertParameters() {
+        const widthInput = document.getElementById("width").value = "";
+        const heightInput = document.getElementById("height").value = "";
+        modif_count = Math.max(0, modif_count - 1);
+        updateButton();
+    }
+
+    function switchButtons(state) {
+        document.getElementById("bwButton").disabled = state;
+        document.getElementById("blurButton").disabled = state;
+        document.getElementById("sharpenButton").disabled = state;
+        document.getElementById("rotateButton").disabled = state;
+        document.getElementById("resizeButton").disabled = state;
+    }
+
+    function showSpinner() {
+        document.getElementById("spinner").style.display = "inline-block";
+        switchButtons(true);
+    }
+    function hideSpinner() {
+        document.getElementById("spinner").style.display = "none";
+        switchButtons(false);
+    }
+
+    async function resetImage(newFile = false) {
+        modif_count = 0;
+        updateButton();
+        document.getElementById("width").value = "";
+        document.getElementById("height").value = "";
+        switchButtons(true);
+
+        if (image_id) {
+            try {
+                const response_delete = await fetch(`${API_DELETE_URL}?key=${encodeURIComponent(image_id)}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                if (!response_delete.ok) {
+                    throw new Error("Image revert failed");
+                }
+                console.log('Images removed succesfully');
+                image_id = null;
+
+            } catch (error) {
+                console.error('Error:', error);
+            }
+        }
+        
+        if (!newFile) return;
+        const { file, name } = getFile() || {};
+        if (file) {
+            const reader = new FileReader();
+
+            reader.onload = async function() {
+                try {
+                    const base64String = reader.result.split(',')[1];
+                    const payload_upload = {
+                        'image': base64String,
+                        'key': image_id ? image_id : name,
+                        'type': "image/jpeg",
+                        'modif_count': modif_count
+                    };
+                    
+                    console.log(payload_upload)
+
+                    const response_upload = await fetch(`${API_UPLOAD_URL}`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(payload_upload)
+                    });
+
+                    if (!response_upload.ok) {
+                        throw new Error("Image upload failed");
+                    }
+                    data = await response_upload.json();
+                    console.log(JSON.parse(data.body).message);
+                    image_id = JSON.parse(data.body).object_key_id;
+                    console.log('Image ID:', image_id);
+                } catch (error) {
+                    console.error('Error:', error);
+                };
+            };
+
+            reader.onerror = function() {
+                console.error("Could not read the file!");
+            };
+            reader.readAsDataURL(file);
+        }
+        switchButtons(false);
+    }
+
+    function getFile() {
+        const input = document.getElementById("imageInput");
+        if (!input.files.length) {
+            alert("Please upload an image first.");
+            return null;
+        }
+        return { file: input.files[0], name: input.files[0].name };
+    }
+
+    async function applyFilter(filterType) {
+        if (filterType === 'resize') {
+            const width = document.getElementById("width").value;
+            const height = document.getElementById("height").value;
+            payload_modify = {
+                'key': image_id,
+                'modifications': JSON.stringify({'modif_count': modif_count, 'type': filterType, 'width': width, 'height': height})
+            };
+        } else {
+            payload_modify = {
+                'key': image_id,
+                'modifications': JSON.stringify({'modif_count': modif_count,'type': filterType})
+            };
+        }
+        try {
+            showSpinner();
+            const response_modify = await fetch(`${API_MODIFY_URL}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(payload_modify)
+            });
+
+            if (!response_modify.ok) {
+                throw new Error(`Filter ${filterType} failed`);
+            }
+
+            data = await response_modify.json();
+            console.log(data);
+            if (data && data.body) {
+                preview.src = "data:image/jpeg;base64," + data.body;
+                preview.style.display = "block";
+            } else {
+                alert("No image data received.");
+            }
+
+            modif_count++;
+            updateButton();
+
+        } catch (error) {
+            console.error('Error:', error);
+        } finally {
+            hideSpinner();
+        };
+    }
+
+    async function revertLastChange() {
+        const { file, name } = getFile() || {};
+
+        if (file) {
+            try {
+                showSpinner();
+                const response_revert = await fetch(`${API_REVERT_URL}?key=${encodeURIComponent(image_id)}`, {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                if (!response_revert.ok) {
+                    throw new Error("Image revert failed");
+                }
+                console.log('Image reverted succesfully');
+                const img = await response_revert.text();
+                preview.src = "data:image/jpeg;base64," + img;
+                preview.style.display = "block";
+
+            } catch (error) {
+                console.error('Error:', error);
+            } finally {
+                hideSpinner();
+            };
+        }
+    }
+  </script>
+</body>
+</html>
