@@ -6,3 +6,7 @@ Main used services:
 - AWS Lambda
 - AWS API Gateway
 - AWS S3
+
+Project made by:
+Lorenzo Ugolini
+Antonio Cordeiro
